@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Setup SSH key
@@ -17,21 +17,27 @@ jobs:
           echo "${{ secrets.EC2_KEY }}" | base64 -d > key.pem
           chmod 400 key.pem
 
-      - name: SSH into EC2 and Deploy
+      - name: Zip the Flask app
+        run: |
+          cd app
+          zip -r ../app.zip .
+
+      - name: Copy app.zip to EC2
+        run: |
+          scp -o StrictHostKeyChecking=no -i key.pem app.zip ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/
+
+      - name: SSH into EC2 and deploy
         run: |
           ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            # Remove old container if running
-            docker rm -f flaskapp || true
-
-            # Navigate or clone repo on EC2
-            if [ ! -d DevOps-demo-19-07 ]; then
-              git clone https://github.com/YOUR-USERNAME/DevOps-demo-19-07.git
-            else
-              cd DevOps-demo-19-07 && git pull
-            fi
-            cd DevOps-demo-19-07/app
+            # Clean old files
+            rm -rf app && mkdir app
+            mv app.zip app/
+            cd app
+            unzip app.zip
+            rm app.zip
 
             # Build and run Docker container
-            docker build -t flaskapp .
-            docker run -d -p 80:80 --name flaskapp flaskapp
+            sudo docker rm -f flaskapp || true
+            sudo docker build -t flaskapp .
+            sudo docker run -d -p 80:80 --name flaskapp flaskapp
           EOF
