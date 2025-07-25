@@ -1,38 +1,35 @@
-name: Terraform Deploy
+name: EC2 Deploy
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  terraform:
-    name: Terraform Deploy to AWS
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.8.4
+    - uses: hashicorp/setup-terraform@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+    - name: Terraform Init & Apply
+      run: terraform init && terraform apply -auto-approve
 
-      - name: Terraform Init
-        run: terraform init
+    - name: Save Private Key
+      run: |
+        terraform output -raw private_key_pem > private_key.pem
+        chmod 600 private_key.pem
 
-      - name: Terraform Validate
-        run: terraform validate
+    - name: Upload Key Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ec2-private-key
+        path: private_key.pem
 
-      - name: Terraform Apply
-        run: terraform apply -auto-approve
-        
-      - name: Terraform Output (EC2 Public IP)
-        run: terraform output ec2_public_ip
+    - name: Set Public IP
+      run: echo "IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
+
+    - name: SCP app.zip
+      run: |
+        scp -o StrictHostKeyChecking=no -i private_key.pem app.zip ec2-user@$IP:/home/ec2-user/
